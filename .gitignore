@@ -5,3 +5,4 @@ memory/persona.private.*
 memory/atoms/_private*.md
 .env
 *.key
+PUSH.md
