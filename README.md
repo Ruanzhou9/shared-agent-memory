@@ -15,14 +15,18 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 
 ## 🎯 它解决什么问题
 
-使用 Agent 时，最让人烦躁的一点是：**换个会话、换一个 Agent，就要重新交代自己的偏好、背景和做事方式。**
+👋 你有没有这样的经历——**每次用一个 Agent，都要重新交代一遍你是谁、你的项目背景、你偏好怎么做事？**
 
-- 项目背景讲过一遍，不该每个 agent 从零重读。
-- 一套方法已经跑通，不该下次再摸索一遍。
-- 你的个人偏好与处理风格，不该每个工具各记一版。
+- 同一个需求，在 Codex 里说过，到 Claude Code 又要再说一遍。
+- 上周跑通的流程，这周换个会话就"忘了"，只能翻聊天记录。
+- "我是做XX的，我偏好简洁的要点回复，这类改动先给我看方案"——这句话你可能已经打了无数遍。
 
-本项目把"你希望所有 agent 记住的东西"沉淀成**一份共享记忆库**，任何 agent 在发起任务时
-都按同一套协议读取它、并在对话中自动把新的稳定偏好写回去——**一次沉淀，全部复用。**
+**Shared Agent Memory 让这一切只发生一次。**
+
+它把"你希望所有 Agent 记住的东西"沉淀成**一份共享记忆库**：任何 Agent 发起任务时按同一套协议
+读取它，并在对话中自动把新的稳定偏好写回去。从此——**一次沉淀，全部复用。**
+
+> 你可以把它想象成所有 Agent 共享的"一张关于你的小抄"，而且它会随你的使用自动更新。
 
 ---
 
@@ -79,7 +83,11 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 git clone <repo-url> agent-memory-skill
 cd agent-memory-skill
 
-# 2. 把 shared-agent-memory 放进你用的 agent 技能根目录（按你用的 agent 选其一）：
+# 2. 一键安装（自动探测你装的 agent，拷到正确技能目录）
+bash install.sh
+#    --dry-run: 只显示将装到哪； --target /path: 改装到指定目录
+
+# 3. （手动方式）把 shared-agent-memory 放进你用的 agent 技能根目录（按你用的 agent 选其一）：
 #    Codex:        ~/.codex/skills/
 #    Claude Code:  ~/.claude/skills/  或 项目 .claude/skills/
 #    Hermes:       ~/.hermes/skills/
@@ -88,7 +96,8 @@ cd agent-memory-skill
 #    Cursor:       项目 .cursor/skills/
 #    Harness:      ~/.dsh/skills/  或 项目 skills/
 
-# 3. 编辑 memory/persona.md 和 memory/atoms/，填成你自己的偏好和事实（清空模板）。
+# 4. 编辑 memory/persona.md 和 memory/atoms/，填成你自己的偏好和事实。
+#    memory/atoms/ 里有两个 example-*.md 虚构样例，先照此格式写你自己的，再删掉样例。
 ```
 
 > **快速校验**：新开会话，问你的 agent"是否加载了 shared-agent-memory"。若未出现，
