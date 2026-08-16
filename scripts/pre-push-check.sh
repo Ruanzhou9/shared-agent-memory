@@ -15,29 +15,29 @@ say_bad(){ echo "  ⚠️  $1"; LEAK=1; }
 echo "══ 共享 Agent Memory 开源仓库 · 隐私自检 ══"
 echo ""
 
-# 1. 真实身份 / 邮箱 / 用户名
-if grep -rniE "bhwcy|eeph@|@126\.com|Ruanzhou9" --include='*' . 2>/dev/null | grep -v '^\./\.git/' | grep -qv "bgignore"; then
+# 1. 真实身份 / 邮箱 / 用户名  (排除脚本自身——它含这些关键词作为搜索模式)
+if grep -rniE "bhwcy|eeph@|@126\.com|Ruanzhou9" --include='*' . 2>/dev/null | grep -v '^\./\.git/' | grep -v '^\./scripts/pre-push-check.sh:'; then
   say_bad "[身份/邮箱/用户名] 疑似命中真实身份信息"
 else
   say_ok "[身份/邮箱/用户名] 无"
 fi
 
 # 2. 绝对用户路径 /Users/
-if grep -rn "Users/" . 2>/dev/null | grep -v '^\./\.git/' ; then
+if grep -rn "Users/" . 2>/dev/null | grep -v '^\./\.git/' | grep -v '^\./scripts/pre-push-check.sh:'; then
   say_bad "[绝对路径] 命中 /Users/..."
 else
   say_ok "[绝对路径] 无"
 fi
 
 # 3. 凭证 / 密钥
-if grep -rniE "sk-[A-Za-z0-9]{16}|api[_-]?key[=:][[:space:]]*[A-Za-z0-9]{12}|AKIA[0-9A-Z]{10}|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY" --include='*' . 2>/dev/null | grep -v '^\./\.git/'; then
+if grep -rniE "sk-[A-Za-z0-9]{16}|api[_-]?key[=:][[:space:]]*[A-Za-z0-9]{12}|AKIA[0-9A-Z]{10}|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY" --include='*' . 2>/dev/null | grep -v '^\./\.git/' | grep -v '^\./scripts/pre-push-check.sh:'; then
   say_bad "[凭证/密钥] 疑似命中真实密钥"
 else
   say_ok "[凭证/密钥] 无"
 fi
 
 # 4. 个人生活痕迹(项目相关本地路径/软件习惯, 可按需增删)
-if grep -rniE "voice-clone|local-ai-doctor|obsidian-content-capture|douyin|wechat|抖音|微信" --include='*' . 2>/dev/null | grep -v '^\./\.git/'; then
+if grep -rniE "voice-clone|local-ai-doctor|obsidian-content-capture|douyin|wechat|抖音|微信" --include='*' . 2>/dev/null | grep -v '^\./\.git/' | grep -v '^\./scripts/pre-push-check.sh:'; then
   say_bad "[个人项目/习惯] 命中可识别项目或使用痕迹"
 else
   say_ok "[个人项目/习惯] 无"
