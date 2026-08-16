@@ -1,0 +1,7 @@
+# 防止个人信息 / 临时文件被意外提交
+.DS_Store
+*.log
+memory/persona.private.*
+memory/atoms/_private*.md
+.env
+*.key
