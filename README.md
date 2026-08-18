@@ -69,9 +69,15 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 - **跨会话 / 跨 agent 共享**：同一份记忆库被不同会话、不同 agent 读取。
 - **省 Token**：每次会话只注入 persona + 命中当前任务的高优先原子记忆，绝不灌全量历史；
   原始聊天永不进库；persona 硬阈值 ≤ 3 KB。
+- **双轴可信度**：`priority` 管注入效率，`confidence` + 状态链管可信度；高优先不等于高可信，
+  避免把"该读"当"已成事实"。
+- **写入节制**：由上下文自然确认的直接沉淀；涉及越界 / 改写既有记忆 / 归属不清 / 证据不足时才先问，
+  不打扰、也不靠猜。
 - **自动沉淀**：agent 按协议把对话中稳定的偏好提炼成原子记忆，并自动去重、逐层归并到画像。
 - **自托管 / 可同步**：记忆库就是普通 Markdown 文件夹，可放本地、同步到你的 Obsidian vault
   或 git 仓库。
+- **跨平台一键安装**：macOS / Linux 用 `bash install.sh`，Windows 用 `install.ps1`，自动探测并把
+  skill 放进对应 agent 的技能目录。
 - **无平台锁定**：不依赖任何特定 Harness，移走即用。
 
 ---
@@ -157,7 +163,9 @@ shared-agent-memory/
 ```markdown
 ---
 type: preference | fact | handling | constraint
-priority: 1-10      # 越高越重要，主动注入；<=4 仅供按需检索
+priority: 1-10        # 主字段：注入优先级；>=6 主动注入，<=4 仅供按需检索
+confidence: (可选 0-1) # 内容可信度，与 priority 正交；高>=0.85 / 中0.6-0.84 / 低<0.6
+status: (可选)        # 状态链 candidate→…→active；非 user-accepted 不作已定结论
 tags: [可选, 标签]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -173,8 +181,11 @@ updated: YYYY-MM-DD
 ## ⚙️ 工作原理（TL;DR）
 
 1. **读取**：新会话开始时，agent 读 `persona.md` + 命中当前任务的高优先原子记忆。
-2. **写入**：对话中出现稳定的偏好 / 事实 / 处理方式时，按 schema 写原子记忆。
+2. **写入**：对话中出现稳定的偏好 / 事实 / 处理方式时，按 schema 写原子记忆；
+   由上下文自然确认的直接沉淀；涉及越界信息 / 改写既有记忆 / 归属不清 / 高可信但证据不足时先问再写（不靠猜）。
 3. **归并**：积累过多时，agent 自动去重、把 2+ 次验证的偏好升到 persona、把过期项降级/删除。
+
+**双轴记忆模型**：`priority` 决定"是否 / 优先注入"，`confidence` + `status` 决定"注入后能否直接当事实或行动依据"，两者正交、不互相替代。
 
 **省 Token 铁律**（详见 `SKILL.md`）：
 原始聊天不进库；每次只读 persona + 命中的高优先原子；persona ≤ 3 KB 且超限即压缩；

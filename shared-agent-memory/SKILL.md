@@ -42,6 +42,17 @@ MemoryRoot = ./memory
    的原子纳入上下文，其余不读。
 3. 若任务延续自既往经验，grep `memory/scenes/` 的 `summary:`，命中才读对应场景全文。
 
+### 写入节制（不打扰，只在真该问时问）
+
+由任务上下文**自然确认**的稳定信息，直接沉淀，不打断用户。只有以下情形才**先问用户、不靠猜**：
+
+1. **越界敏感信息**：涉及隐私、账号、路径等，拿不准是否要让所有 agent 看到。
+2. **改写既有记忆**：要升/降某条原子的 priority，或用新结论覆盖旧结论（纠错）。
+3. **归属不清**：这条记忆的类型（preference/fact）或去处（atoms/scenes）说不清。
+4. **高可信但证据不足**：准备标为 `user-accepted` / 高 confidence，却缺少足够证据。
+
+其余情况**宁可不打扰，也不靠猜**。
+
 ## 对话中值得沉淀的信息（产生后写入，且保持浓缩）
 
 当用户表达出以下任一类**稳定**信息时，按 schema 写入（避免琐碎的一次性内容）：
@@ -61,7 +72,9 @@ MemoryRoot = ./memory
 ```markdown
 ---
 type: preference | fact | handling | constraint
-priority: 1-10      # 越高越重要，主动注入；<=4 仅供按需检索
+priority: 1-10        # 主字段：注入优先级；>=6 主动注入，<=4 仅供按需检索
+confidence: (可选 0-1) # 内容可信度，与 priority 正交；高>=0.85 / 中0.6-0.84 / 低<0.6
+status: (可选)        # 状态链 candidate→…→active；非 user-accepted 不作已定结论
 tags: [可选, 标签]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -91,6 +104,7 @@ updated: YYYY-MM-DD
 - **不破坏 schema**，改元数据（priority/updated）不清除正文。
 - 涉及用户隐私或敏感信息尽量匿名/概括。
 - 写库前自检：这一条是否值得让所有未来 agent 看到？拿不准就不写。
+- **priority 与 confidence 分工**：priority 决定"是否/优先注入"，confidence + status 决定"注入后能否直接当事实或行动依据"。两者正交、不互相替代；有可选字段时如实填写，证据不足不虚标高可信。
 
 ## 🔁 归并 / 总结压缩协议（谁做、何时做、怎么做）
 
@@ -102,6 +116,8 @@ updated: YYYY-MM-DD
 2. `ls memory/atoms/` 超 50 条，或出现同义/重复条目。
 3. 发现冲突或过期：某原子与 persona 或其它原子矛盾、已被取代。
 4. 会话边界：本次会话为库新增 ≥ 3 条原子记忆时，顺手做一次局部收敛。
+5. pri/conf 失衡：某原子的 priority 与 confidence/status 明显不匹配（如高 priority 却低可信，
+   或低 priority 却标 user-accepted），或与 persona/用户偏好冲突 → 检查并提示校准。
 
 ### 压缩方法（L3 → L2 → 原子）
 - **去重合并**：grep 全库找同义/重叠条目 → 合并为一条，priority 取高，updated 更新。
