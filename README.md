@@ -78,6 +78,8 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 
 ## 🚀 快速开始
 
+### macOS / Linux（bash）
+
 ```bash
 # 1. 克隆 / 拷贝本仓库
 git clone <repo-url> agent-memory-skill
@@ -87,21 +89,54 @@ cd agent-memory-skill
 bash install.sh
 #    --dry-run: 只显示将装到哪； --target /path: 改装到指定目录
 
-# 3. （手动方式）把 shared-agent-memory 放进你用的 agent 技能根目录（按你用的 agent 选其一）：
-#    Codex:        ~/.codex/skills/
-#    Claude Code:  ~/.claude/skills/  或 项目 .claude/skills/
-#    Hermes:       ~/.hermes/skills/
-#    OpenClaw:     ~/.openclaw/skills/
-#    OpenCode:     ~/.config/opencode/…/skills
-#    Cursor:       项目 .cursor/skills/
-#    Harness:      ~/.dsh/skills/  或 项目 skills/
-
-# 4. 编辑 memory/persona.md 和 memory/atoms/，填成你自己的偏好和事实。
+# 3. 编辑 memory/persona.md 和 memory/atoms/，填成你自己的偏好和事实。
 #    memory/atoms/ 里有两个 example-*.md 虚构样例，先照此格式写你自己的，再删掉样例。
 ```
 
+### Windows（PowerShell，无需安装任何额外软件）
+
+```powershell
+# 1. 克隆 / 拷贝本仓库
+git clone <repo-url> agent-memory-skill
+cd agent-memory-skill
+
+# 2. 一键安装（等价于 install.sh，自动探测 Windows 上的 agent 目录）
+powershell -ExecutionPolicy Bypass -File install.ps1
+#    或直接: .\install.ps1
+#    -DryRun:            只显示将装到哪，不执行
+#    -Target "C:\..."    改装到指定目录
+```
+
+### 手动方式（macOS / Linux / Windows 通用，按你用的 agent 选其一）
+
+```text
+Codex         ~/.codex/skills/          （Windows: %USERPROFILE%\.codex\skills\）
+Claude Code   ~/.claude/skills/         （Windows: %USERPROFILE%\.claude\skills\）
+Hermes        ~/.hermes/skills/         （Windows: %USERPROFILE%\.hermes\skills\）
+OpenClaw      ~/.openclaw/skills/       （Windows: %USERPROFILE%\.openclaw\skills\）
+OpenCode      ~/.config/opencode/…/skills
+Cursor        项目 .cursor/skills/
+Harness       ~/.dsh/skills/  或 项目 skills/
+```
+
+> `install.sh` / `install.ps1` 会自动探测上面前几个最常用的目录；拿不准时用它们最省事。
+
 > **快速校验**：新开会话，问你的 agent"是否加载了 shared-agent-memory"。若未出现，
 > 确认 `SKILL.md` 首行为 `---`、文件名正确，并重启 agent / 新开会话。
+
+---
+
+## 💻 跨平台支持一览
+
+| 平台 | 一键安装 | 手动拷贝 | 记忆库本体 |
+|---|---|---|---|
+| **macOS** | ✅ `bash install.sh` | ✅ | ✅ |
+| **Linux** | ✅ `bash install.sh` | ✅ | ✅ |
+| **Windows**（PowerShell） | ✅ `install.ps1` | ✅ | ✅ |
+| **Windows**（Git Bash / WSL） | ✅ `bash install.sh` | ✅ | ✅ |
+
+> 记忆库本体是纯 Markdown，**任何能读取 `SKILL.md` 的 agent、任何操作系统都能用**。
+> 一键安装脚本只是帮你自动放到正确的技能目录。
 
 ---
 
