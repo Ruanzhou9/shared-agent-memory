@@ -2,6 +2,17 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)；协议以 `SKILL.md` 的 `version` 字段标识。
 
+## [1.4.1] — 2026-10-15
+
+配套 Skill 落地后的互指引：人读档案那一层的读写协议已独立成 Skill
+（[`personal-archive`](https://github.com/Ruanzhou9/personal-archive-skill)），
+本协议在「双仓隔离纪律」开头点明分工——**档案体例归 `personal-archive`，两仓边界与放行标准归本协议**，
+避免两边重复定义、也避免 agent 只读到一半。
+
+### 变更
+
+- `SKILL.md`：双仓隔离章节开头补一句配套 Skill 指引（无规则实质变化，故为修订版）。
+
 ## [1.4.0] — 2026-10-15
 
 新增**「双仓隔离纪律」**：把人读档案与机读记忆的边界写成可执行、可校验的硬规则。

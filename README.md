@@ -94,6 +94,8 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 - **双仓隔离**：与用户自己的**人读档案**（散文体、按编号组织的那一层）严格分开——两仓互不镜像，
   只有「对 agent 有用」的档案信息才允许单向放行入本库（三问门控 + 可行动性 ≥ 2 + 红线一票否决），
   且 **agent 默认不读人读档案**。见 `SKILL.md` 的「双仓隔离纪律」与 `doctor.sh` 的 [J] 检查项。
+  配套 Skill：[`personal-archive`](https://github.com/Ruanzhou9/personal-archive-skill)
+  —— 人读档案那一层的读写协议（体例、编号、写入流程），本协议只管两仓边界。
 - **无平台锁定**：不依赖任何特定 Harness，移走即用。
 
 ---
