@@ -91,6 +91,9 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
   新鲜度，以及 persona 的**建议值软提醒**）变成可校验的检查；三个容量阈值都支持用环境变量
   覆盖（`SAM_PERSONA_SOFT` / `SAM_ATOMS_MAX_COUNT` / `SAM_ATOMS_MAX_BYTES`），
   `scripts/pre-push-check.sh` + GitHub Actions 兜底隐私。
+- **双仓隔离**：与用户自己的**人读档案**（散文体、按编号组织的那一层）严格分开——两仓互不镜像，
+  只有「对 agent 有用」的档案信息才允许单向放行入本库（三问门控 + 可行动性 ≥ 2 + 红线一票否决），
+  且 **agent 默认不读人读档案**。见 `SKILL.md` 的「双仓隔离纪律」与 `doctor.sh` 的 [J] 检查项。
 - **无平台锁定**：不依赖任何特定 Harness，移走即用。
 
 ---
@@ -235,7 +238,7 @@ shared-agent-memory/                 # ← 被安装到各 agent 技能目录的
     └── chat-log/*.md        # L0 聊天记录摘要/指针（不进原文，不用绝对路径）
 
 scripts/
-├── doctor.sh                # 记忆库体检：容量/ schema /双轴/新鲜度/去重/inbox 积压
+├── doctor.sh                # 记忆库体检：容量/ schema /双轴/新鲜度/去重/inbox 积压/双仓隔离
 ├── pre-push-check.sh        # 推送前隐私自检（身份/路径/密钥/PII/恶意文件名/git 作者）
 ├── blacklist.local.example  # 本地黑名单模板（真实黑名单放 blacklist.local，不入库）
 └── ../.github/workflows/privacy-check.yml  # CI：自检 + 体检 + 安装器冒烟 + lint
@@ -339,8 +342,10 @@ Agent Skills 规范的硬限制）、是否声明 `version`、有无 BOM/CRLF、
 
 `doctor.sh` 检查：persona 建议值（超出仅告警，不阻断）；atoms ≤ 100 条 / ≤ 256 KB（达 80% 即预警）；frontmatter 是否闭合与必填字段、
 `type`/`status` 枚举与 `priority`/`confidence` 取值；双轴是否失衡（高优先却低可信等）；
-`priority>=6` 是否带 `verified`、是否超过 180 天未复核；chat-log 是否含机器绝对路径；
-首句重复条目；inbox 候选积压。
+新鲜度（`priority≥6` 是否带 `verified`、是否超过 180 天未复核）；chat-log 指针是否含机器绝对路径；
+重复条目；各 agent 的 inbox 积压；SKILL.md 版本；淘汰候选（[I]）；
+**双仓隔离（[J]）——身份字段类（证件号/银行卡/手机号）命中即报错，出现档案 wikilink、
+机器绝对路径或单条 > 3 KB 则提醒**。
 
 CI（`.github/workflows/privacy-check.yml`）在每次 push / PR 上跑：隐私自检 + 记忆库体检 +
 安装器冒烟测试 + `shellcheck` + `install.ps1` 语法检查。若你在仓库 Secrets 里配置

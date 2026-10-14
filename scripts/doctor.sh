@@ -19,6 +19,7 @@
 #   G inbox     各 agent 候选积压量（>10 条提示晋升）
 #   H 版本      SKILL.md 的 version 字段
 #   I 淘汰候选   priority<=4 且超 180 天未复核（评分卡淘汰机制，v1.2）
+#   J 双仓隔离   高敏感字段（身份证/银行卡/手机号）与「把档案散文搬进本库」迹象（v1.4）
 # ============================================================
 set -uo pipefail
 
@@ -348,6 +349,45 @@ fi
 if [ "${ACOUNT}" -gt 0 ]; then
   info "注入中(priority≥6) ${N_INJ} 条 · 储备(=5) ${N_RES} 条 · 淘汰候选 ${EVICT} 条"
   [ "${EVICT}" -eq 0 ] && ok "无淘汰候选"
+else
+  info "无 atoms 可校验"
+fi
+echo ""
+
+# ---------- J. 双仓隔离（v1.4）----------
+echo "[J] 双仓隔离（人读档案 ↔ 机读记忆）"
+if [ -n "${ATOM_FILES}" ]; then
+  JERR=0; JWARN=0
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    rel="${f#${MEM}/}"
+    if grep -Eq '[0-9]{17}[0-9Xx]' "$f"; then
+      err "${rel}: 疑似身份证号（18 位）→ 红线，禁止写入机读记忆"
+      JERR=$((JERR+1))
+    fi
+    if grep -Eq '[0-9]{16,19}' "$f"; then
+      err "${rel}: 疑似银行卡号（16–19 位连号）→ 红线，禁止写入机读记忆"
+      JERR=$((JERR+1))
+    fi
+    if grep -Eq '(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)' "$f"; then
+      err "${rel}: 疑似手机号（11 位）→ 只应保留尾号或标签"
+      JERR=$((JERR+1))
+    fi
+    if grep -Eq '\[\[个人档案/|/Users/[^ ]*个人档案/|~[^ ]*个人档案/' "$f"; then
+      warn "${rel}: 出现人读档案的 wikilink 或机器绝对路径 → 机读记忆只应留「日期+主题」或相对路径索引"
+      JWARN=$((JWARN+1))
+    fi
+    asize=$(wc -c < "$f" | tr -d ' ')
+    if [ "${asize}" -gt 3072 ]; then
+      warn "${rel}: 单条 ${asize} B > 3 KB → 偏大，考虑压缩为结论或把细节下沉（本库目标浓缩，不是档案全文）"
+      JWARN=$((JWARN+1))
+    fi
+  done <<< "${ATOM_FILES}"
+  if [ "${JERR}" -eq 0 ] && [ "${JWARN}" -eq 0 ]; then
+    ok "无双仓越界迹象（无身份字段、无档案散文搬运）"
+  else
+    info "越界：红线 ${JERR} 处 · 疑似搬运 ${JWARN} 处"
+  fi
 else
   info "无 atoms 可校验"
 fi
