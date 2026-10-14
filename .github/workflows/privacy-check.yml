@@ -1,0 +1,77 @@
+name: privacy-check
+
+# 隐私与协议合规门禁：仓库的隐私承诺必须由 CI 兜底，而不是靠"记得手动跑一次脚本"。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  privacy-and-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout（取全历史，作者检查需要）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 注入本地隐私黑名单（可选）
+        # 在仓库 Settings → Secrets → Actions 里配置 PRIVACY_BLACKLIST，
+        # 内容与本地 scripts/blacklist.local 相同（每行一个 grep -E 正则）。
+        # 未配置时：身份类检查自动跳过，通用检查照常执行。
+        env:
+          BL: ${{ secrets.PRIVACY_BLACKLIST }}
+        run: |
+          if [ -n "${BL:-}" ]; then
+            printf '%s\n' "$BL" > scripts/blacklist.local
+            echo "已注入 PRIVACY_BLACKLIST（内容不打印）"
+          else
+            echo "未配置 PRIVACY_BLACKLIST，身份类检查将跳过"
+          fi
+
+      - name: 隐私自检
+        run: bash scripts/pre-push-check.sh
+
+      - name: 记忆库体检（协议合规）
+        run: bash scripts/doctor.sh
+
+      - name: 安装器冒烟测试
+        run: |
+          # 正例：伪造两个 agent 目录 → 应探测到并列出多个目标
+          mkdir -p "$HOME/.codex" "$HOME/.claude"
+          bash install.sh --dry-run
+          bash install.sh --dry-run --only codex | grep -q '目标数 : 1'
+          bash install.sh --help >/dev/null
+          # 负例：未探测到已知 agent 时，默认拒绝（不静默装入 ~/skills）
+          rm -rf "$HOME/.codex" "$HOME/.claude"
+          if bash install.sh --dry-run >/dev/null 2>&1; then
+            echo "✗ 未探测到 agent 时应返回非零"; exit 1
+          fi
+          bash install.sh --dry-run --yes | grep -q 'fallback'
+          # 负例：参数校验
+          if bash install.sh --only >/dev/null 2>&1; then echo "✗ 缺参数应报错"; exit 1; fi
+          if bash install.sh --bogus >/dev/null 2>&1; then echo "✗ 未知参数应报错"; exit 1; fi
+          echo "✓ 安装器行为符合预期"
+
+      - name: bash 静态检查 (shellcheck)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          # 先用 error 级（真错误）卡门禁；本地尚未跑过 warning 级，
+          # 待首次 CI 绿灯后可提高到 -S warning 进一步收紧。
+          shellcheck -S error install.sh scripts/*.sh
+
+      - name: PowerShell 语法检查 (install.ps1)
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "✗ $($_.Message) @ line $($_.Extent.StartLineNumber)" }
+            exit 1
+          }
+          Write-Host "✓ install.ps1 语法检查通过"
