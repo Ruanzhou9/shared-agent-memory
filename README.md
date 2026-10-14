@@ -55,7 +55,7 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 | **L0 · 原始对话** | 与 agent 的聊天记录 | 只存"一句话摘要 + 会话日志指针"，原文留在各自 agent 的会话存档，**不进库** |
 | **L1 · 原子记忆** | 一条条稳定的偏好 / 事实 / 处理方式 | `memory/atoms/*.md`，一条一文件，带 `type / priority` 门控 |
 | **L2 · 场景块** | 多个原子围绕同一上下文凝聚成的经验 | `memory/scenes/*.md`，含 `summary:` 索引，按需读取 |
-| **L3 · 用户画像** | 跨领域的稳定偏好与风格 | `memory/persona.md`，每次会话读取的核心（≤ 3 KB） |
+| **L3 · 用户画像** | 跨领域的稳定偏好与风格 | `memory/persona.md`，每次会话读取的核心（建议 ≤ 3 KB，软阈值） |
 
 > **与 TencentDB-Agent-Memory 的区别**：Tencent 那套是完整的多组件服务（含 Proxy、知识库、
 > 云端存储），本仓库刻意做成**极简、单一 `SKILL.md` + 一个 Markdown 文件夹、零外部依赖**，
@@ -69,7 +69,7 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
 - **跨会话 / 跨 agent / 跨设备共享**：同一份记忆库被不同会话、不同 agent、不同电脑读取；
   `MemoryRoot` 解析规则明确（环境变量 > SKILL.md 所在目录），装到哪都不会读错库。
 - **省 Token**：每次会话只注入 persona + 命中当前任务的高优先原子记忆，绝不灌全量历史；
-  原始聊天永不进库；persona 硬阈值 ≤ 3 KB。
+  原始聊天永不进库；persona 以 ≤ 3 KB 为**建议基线**（软阈值，超出仅提醒、不阻断注入）。
 - **并发写不互踩**：新记忆先进 `memory/inbox/<agent>-<host>/` 候选池（代号带主机后缀，
   避免同一 agent 在两台机器上写进同一目录），每方只写自己的文件；晋升是**单写者操作**、
   固定顺序 `pull --rebase → 晋升 → push`——**多 agent 并行写候选不会冲突**，多设备 git 合并也不会打架。
@@ -87,8 +87,10 @@ OpenCode、Cursor 还是各类 Harness，只要它读取标准 `SKILL.md`，就�
   **默认装到你机器上所有探测到的 agent**，让它们共享同一份记忆；`--update` 只更新协议、
   保留你的 `memory/` 数据；`--link-memory` 一步把各 agent 的 `memory/` 统一指向同一份真库
   （macOS/Linux 用软链、Windows 用 Junction），根治「装了多个 agent 却各读各的模板」。
-- **可体检、有门禁**：`scripts/doctor.sh` 把协议里的硬要求（3 KB / 50 条 / schema / 双轴一致 /
-  新鲜度）变成可校验的检查；`scripts/pre-push-check.sh` + GitHub Actions 兜底隐私。
+- **可体检、有门禁**：`scripts/doctor.sh` 把协议里的硬要求（atoms 上限 / schema / 双轴一致 /
+  新鲜度，以及 persona 的**建议值软提醒**）变成可校验的检查；三个容量阈值都支持用环境变量
+  覆盖（`SAM_PERSONA_SOFT` / `SAM_ATOMS_MAX_COUNT` / `SAM_ATOMS_MAX_BYTES`），
+  `scripts/pre-push-check.sh` + GitHub Actions 兜底隐私。
 - **无平台锁定**：不依赖任何特定 Harness，移走即用。
 
 ---
@@ -224,7 +226,7 @@ DSH（未验证）  ~/.dsh/skills/            （本机实测其代码未读取�
 shared-agent-memory/                 # ← 被安装到各 agent 技能目录的就是这一层
 ├── SKILL.md                 # 记忆库读写协议（agent 自动加载的入口）
 └── memory/
-    ├── persona.md           # L3 用户画像（每次会话读取的核心，≤3KB）
+    ├── persona.md           # L3 用户画像（每次会话读取的核心，建议 ≤3KB）
     ├── atoms/*.md           # L1 原子记忆（一条一个文件，带 schema）
     │   ├── _template.md     #   模板（_ 前缀 = 非记忆，不注入）
     │   └── _examples/       #   示例（priority=1，可整目录删除）
@@ -276,13 +278,19 @@ updated: YYYY-MM-DD
 3. **归并**：候选被用户确认或 2+ 次会话验证后晋升为 `atoms/`；积累过多时去重、把稳定偏好
    升到 persona、把过期项降级/删除。归并前先跑 `scripts/doctor.sh` 看容量与新鲜度报告。
 
+**入库评分卡（v1.2 写入门控）**：候选晋升前按 相关性 / 重要性 / 时效性 / 置信度 / 可行动性
+五维各 0–3 分打分——**≥12 晋升核心记忆 · 7–11 只留长期摘要（不主动注入）· <7 丢弃或只留
+外部索引**。原始记录全量归档在外部，进库的只有摘要与索引。
+配套「定期淘汰」：`doctor.sh` [I] 自动列出 priority≤4 且超 180 天未复核的淘汰候选，
+复核后归档或删除（先问用户，不静默删）。
+
 **双轴记忆模型**：`priority` 决定"是否 / 优先注入"，`confidence` + `status` 决定"注入后能否直接当事实或行动依据"，两者正交、不互相替代。
 
 **并发写模型**：不同 agent 写不同文件（inbox 隔离），因此多 agent、多设备、git 合并都不会互踩；
 要改别人的记忆 → 先读、保留双方版本、把合并建议写进自己的 inbox。
 
 **省 Token 铁律**（详见 `SKILL.md`）：
-原始聊天不进库；每次只读 persona + 命中的高优先原子；persona ≤ 3 KB 且超限即压缩；
+原始聊天不进库；每次只读 persona + 命中的高优先原子；persona 以 3 KB 为建议基线（软阈值）；
 绝不自动通读全量历史；`_` 前缀文件与 `inbox/` 不属记忆、禁止注入。
 目标：每次会话自动注入内容恒在 ~1–1.5 KB 内。
 
@@ -329,7 +337,7 @@ Agent Skills 规范的硬限制）、是否声明 `version`、有无 BOM/CRLF、
 遇到**软链安装**会单独标注（校验目标文件、不判失败），遇到**空壳目录**（有目录没 `SKILL.md`）
 会报错——这种目录 agent 读不到，属历史残留。
 
-`doctor.sh` 检查：persona ≤ 3 KB；atoms ≤ 50 条 / ≤ 100 KB；frontmatter 是否闭合与必填字段、
+`doctor.sh` 检查：persona 建议值（超出仅告警，不阻断）；atoms ≤ 100 条 / ≤ 256 KB（达 80% 即预警）；frontmatter 是否闭合与必填字段、
 `type`/`status` 枚举与 `priority`/`confidence` 取值；双轴是否失衡（高优先却低可信等）；
 `priority>=6` 是否带 `verified`、是否超过 180 天未复核；chat-log 是否含机器绝对路径；
 首句重复条目；inbox 候选积压。

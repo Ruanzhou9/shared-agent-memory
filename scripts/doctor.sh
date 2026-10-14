@@ -10,13 +10,15 @@
 # 退出码: 0=通过(可含警告)  1=发现错误  2=用法/路径错误
 #
 # 检查项:
-#   A 容量阈值   persona ≤3KB / atoms ≤50 条 且 ≤100KB
+#   A 容量阈值   persona 建议 ≤3KB（软阈值，仅提醒不阻断）/ atoms ≤100 条 且 ≤256KB
 #   B schema     frontmatter 是否闭合、必填字段、type/status 枚举、priority/confidence 取值
 #   C 双轴一致   priority 与 confidence/status 是否失衡
 #   D 新鲜度     priority>=6 是否带 verified、是否超过 180 天未复核
 #   E 指针规范   chat-log 是否含机器绝对路径
 #   F 去重       首句完全相同的原子条目
 #   G inbox     各 agent 候选积压量（>10 条提示晋升）
+#   H 版本      SKILL.md 的 version 字段
+#   I 淘汰候选   priority<=4 且超 180 天未复核（评分卡淘汰机制，v1.2）
 # ============================================================
 set -uo pipefail
 
@@ -49,9 +51,13 @@ if [ ! -d "${MEM}" ]; then
   exit 2
 fi
 
-PERSONA_MAX=3072          # 3 KB
-ATOMS_MAX_COUNT=50
-ATOMS_MAX_BYTES=102400    # 100 KB
+# 容量阈值：可用环境变量覆盖，无需改脚本
+#   SAM_PERSONA_SOFT / SAM_ATOMS_MAX_COUNT / SAM_ATOMS_MAX_BYTES
+PERSONA_SOFT="${SAM_PERSONA_SOFT:-3072}"           # 建议基线 3 KB —— 软阈值，超出仅提醒、不阻断
+ATOMS_MAX_COUNT="${SAM_ATOMS_MAX_COUNT:-100}"      # 100 条（v1.3 由 50 放宽）
+ATOMS_MAX_BYTES="${SAM_ATOMS_MAX_BYTES:-262144}"   # 256 KB（v1.3 由 100 KB 放宽）
+ATOMS_WARN_COUNT=$((ATOMS_MAX_COUNT * 8 / 10))
+ATOMS_WARN_BYTES=$((ATOMS_MAX_BYTES * 8 / 10))
 STALE_DAYS=180
 INBOX_WARN=10
 
@@ -101,12 +107,12 @@ ABS_RE='[/]Users[/][A-Za-z0-9_-]+|[/]home[/][A-Za-z0-9_-]+|[Cc]:[\\/]Users[\\/][
 echo "[A] 容量阈值"
 if [ -f "${MEM}/persona.md" ]; then
   PSIZE=$(wc -c < "${MEM}/persona.md" | tr -d ' ')
-  if [ "${PSIZE}" -gt "${PERSONA_MAX}" ]; then
-    err "persona.md 超限: ${PSIZE} B > ${PERSONA_MAX} B（禁止整篇注入，需压缩去重后重试）"
-  elif [ "${PSIZE}" -gt $((PERSONA_MAX * 9 / 10)) ]; then
-    warn "persona.md 接近阈值: ${PSIZE} B / ${PERSONA_MAX} B（余量 ${PERSONA_MAX}-${PSIZE} B）"
+  if [ "${PSIZE}" -gt "${PERSONA_SOFT}" ]; then
+    warn "persona.md 超出建议基线: ${PSIZE} B > ${PERSONA_SOFT} B（软阈值，不阻断；建议做一次去重、把细节下沉为原子记忆）"
+  elif [ "${PSIZE}" -gt $((PERSONA_SOFT * 9 / 10)) ]; then
+    warn "persona.md 接近建议基线: ${PSIZE} B / ${PERSONA_SOFT} B（余量 $((PERSONA_SOFT - PSIZE)) B）"
   else
-    ok "persona.md ${PSIZE} B / ${PERSONA_MAX} B"
+    ok "persona.md ${PSIZE} B / 建议 ${PERSONA_SOFT} B"
   fi
 else
   err "缺少 persona.md（记忆库根目录无 L3 画像）"
@@ -128,14 +134,18 @@ if [ -n "${ATOM_FILES}" ]; then
 fi
 [ "${TEMPLATE_N}" -gt 0 ] && info "已跳过 ${TEMPLATE_N} 个模板/示例文件（_ 前缀，不属记忆，不参与校验）"
 if [ "${ACOUNT}" -gt "${ATOMS_MAX_COUNT}" ]; then
-  err "atoms 条数超限: ${ACOUNT} > ${ATOMS_MAX_COUNT}（应归并：合并同义、降级过期、细节下沉）"
+  err "atoms 条数超限: ${ACOUNT} > ${ATOMS_MAX_COUNT}（应归并：合并同义、降级过期、细节下沉；确需更多可用 SAM_ATOMS_MAX_COUNT 上调）"
 elif [ "${ACOUNT}" -eq 0 ]; then
   info "atoms 为空（模板库正常；真实库为空说明尚未沉淀记忆）"
+elif [ "${ACOUNT}" -gt "${ATOMS_WARN_COUNT}" ]; then
+  warn "atoms 条数接近上限: ${ACOUNT} / ${ATOMS_MAX_COUNT}（建议归并同义项）"
 else
   ok "atoms ${ACOUNT} 条 / 上限 ${ATOMS_MAX_COUNT}"
 fi
 if [ "${ABYTES}" -gt "${ATOMS_MAX_BYTES}" ]; then
   err "atoms 总体积超限: ${ABYTES} B > ${ATOMS_MAX_BYTES} B"
+elif [ "${ABYTES}" -gt "${ATOMS_WARN_BYTES}" ]; then
+  warn "atoms 总量接近上限: ${ABYTES} B / ${ATOMS_MAX_BYTES} B"
 elif [ "${ABYTES}" -gt 0 ]; then
   ok "atoms 总量 ${ABYTES} B / ${ATOMS_MAX_BYTES} B"
 fi
@@ -298,6 +308,48 @@ if [ -f "${SKILL}" ]; then
   [ -n "$v" ] && ok "SKILL.md version: ${v}" || warn "SKILL.md 未声明 version（协议演进时无法区分新旧）"
 else
   info "（当前库不在技能目录内，跳过 SKILL.md 版本检查）"
+fi
+echo ""
+
+# ---------- I. 淘汰候选（v1.2 评分卡淘汰机制）----------
+echo "[I] 淘汰候选（priority≤4 且超 ${STALE_DAYS} 天未复核）"
+EVICT=0; N_INJ=0; N_RES=0
+if [ -n "${ATOM_FILES}" ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    pri="$(fm_get "$f" priority)"
+    st="$(fm_get "$f" status)"
+    ver="$(fm_get "$f" verified)"
+    rel="${f#${MEM}/}"
+    case "$pri" in
+      5) N_RES=$((N_RES+1)); continue ;;
+      6|7|8|9|10) N_INJ=$((N_INJ+1)); continue ;;
+      1|2|3|4) : ;;
+      *) continue ;;
+    esac
+    # 已归档/被取代的条目是既往淘汰的结果，不算新候选
+    if [ "$st" = "archived" ] || [ "$st" = "superseded" ]; then continue; fi
+    stale=0
+    if [ -z "$ver" ]; then
+      stale=1
+    elif [ -n "$CUTOFF" ] && [ "$ver" \< "$CUTOFF" ]; then
+      stale=1
+    fi
+    if [ "$stale" -eq 1 ]; then
+      if [ -z "$ver" ]; then
+        warn "${rel}: priority=${pri} 且无 verified → 淘汰候选（按入库评分卡复核，<7 分应归档或删除，先问用户）"
+      else
+        warn "${rel}: priority=${pri} 且 verified=${ver} 已超 ${STALE_DAYS} 天未复核 → 淘汰候选"
+      fi
+      EVICT=$((EVICT+1))
+    fi
+  done <<< "${ATOM_FILES}"
+fi
+if [ "${ACOUNT}" -gt 0 ]; then
+  info "注入中(priority≥6) ${N_INJ} 条 · 储备(=5) ${N_RES} 条 · 淘汰候选 ${EVICT} 条"
+  [ "${EVICT}" -eq 0 ] && ok "无淘汰候选"
+else
+  info "无 atoms 可校验"
 fi
 echo ""
 

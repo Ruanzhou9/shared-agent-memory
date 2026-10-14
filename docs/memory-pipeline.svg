@@ -41,7 +41,7 @@
   <!-- L3 -->
   <rect x="300" y="450" width="280" height="54" rx="10" fill="url(#g3)"/>
   <text x="320" y="476" font-size="15" font-weight="700" fill="#ffffff">L3 · 用户画像（persona.md）</text>
-  <text x="320" y="496" font-size="11" fill="#fdeef4">稳定的跨领域偏好，每次会话读取的核心（≤3KB）</text>
+  <text x="320" y="496" font-size="11" fill="#fdeef4">稳定的跨领域偏好，每次会话读取的核心（建议 ≤3KB）</text>
 
   <!-- right annotation: injection -->
   <rect x="600" y="230" width="230" height="180" rx="10" fill="#ffffff" stroke="#c7cbe0"/>
