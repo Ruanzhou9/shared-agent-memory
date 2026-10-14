@@ -1,0 +1,15 @@
+# 本地隐私黑名单模板
+#
+# 用法：复制为 scripts/blacklist.local（该文件名已被 .gitignore 忽略，不会入库），
+#       把你的真实身份标识替换掉下面的占位符，每行一个 grep -E 正则。
+# 说明：黑名单必须留在本地。写进仓库等于用「公开泄漏」的方式做「防泄漏」——
+#       任何读过仓库的人都知道要搜什么。
+#
+# 填写示例（把 <...> 部分换成你的真实值，注意本模板里的占位符不会被自检脚本命中）：
+your-real-name
+your-nickname-or-github-id
+your-name@example\.com
+@your-mail-domain\.com
+YourCompanyName
+<你的 mac 用户名>
+<你的外接磁盘卷名>

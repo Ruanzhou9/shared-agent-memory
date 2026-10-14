@@ -1,8 +1,36 @@
 # 防止个人信息 / 临时文件被意外提交
+# 注意：含斜杠的模式是「相对仓库根」锚定的，所以对嵌套路径要写 **/ 前缀，
+#       否则 shared-agent-memory/memory/... 这类路径不会被忽略（v1.0 的 pattern 就是这么失效的）。
 .DS_Store
+Thumbs.db
 *.log
-memory/persona.private.*
-memory/atoms/_private*.md
-.env
-*.key
 PUSH.md
+
+# ── 记忆库的私有内容（含个人信息的库不应入库；本仓库只发布空模板）──
+**/memory/persona.private.*
+**/memory/atoms/_private*.md
+**/memory/atoms/*.private.md
+**/memory/inbox/*
+!**/memory/inbox/README.md
+
+# ── 本地隐私黑名单：必须留在本地，写进仓库等于公开泄漏 ──
+scripts/blacklist.local
+
+# ── 凭据 / 密钥 / 环境变量 ──
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+credentials.json
+service-account*.json
+.netrc
+
+# ── 安装器更新备份 ──
+**/.backups/

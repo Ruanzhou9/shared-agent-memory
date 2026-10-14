@@ -1,0 +1,140 @@
+# Changelog
+
+本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)；协议以 `SKILL.md` 的 `version` 字段标识。
+
+## [1.1.3] — 2026-10-14
+
+对账全机 agent 时发现的一个**此前从未暴露的致命缺陷**：装了 15 个 agent 技能目录、
+每个都"正常读到 persona"，但读到的其实都是**安装时复制进去的模板库**——
+系统里**从未设置过 `SHARED_AGENT_MEMORY_ROOT`**，各目录下的 `memory/` 又都是实体模板，
+于是「实时共享」从头到尾没有生效过。SKILL.md 旧表述只把"不设环境变量"轻描淡写为
+"互不可见"，没点明「会退化成各读各的**模板**」。本版一并修复根因与表述。
+
+### 新增
+
+- **`install.sh --link-memory <真库路径>`**：安装/更新后把**每个**目标的 `memory/` 换成
+  **指向同一份真库的软链**，一步完成多 agent 共享。
+  - 动手前校验：路径必须存在且**含 `persona.md`**，否则拒绝链接并给出提示（防手误指到无关目录）。
+  - 原模板 `memory/` 不删除，**移入** `<技能目录>/.backups/memory-template-<时间戳>/` 保留。
+  - 幂等：已指向该库 → 提示"无需改动"；已是软链但指向**别的**库 → **拒绝覆盖**并说明原因，
+    不会悄悄改掉用户的既有绑定。
+  - `--dry-run` 会预览"并把 memory/ 链到 …"。
+- **`install.ps1 -LinkMemory`**：镜像同一语义，Windows 用 **Junction（目录联接）**，
+  无需管理员权限；创建失败时打印可手动执行的 `mklink /J` 命令。
+- 未指定 `--link-memory` 时的结尾警告升级为**可操作的两条出路**
+  （重跑加 `--link-memory`，或导出环境变量），不再只丢一句"记忆不互通"。
+
+### 变更
+
+- **`SKILL.md` v1.1.3**：MemoryRoot 段落改写为「软链 vs 环境变量」两种做法并标注各自适用场景，
+  明确 **软链不依赖 agent 启动方式**（GUI 启动的 app 常读不到 shell 环境变量）；
+  新增**假共享陷阱**说明与自检方法（看 `persona.md` 是否模板内容、`atoms/` 是否有 2 条以上真实记忆）。
+- README 的「快速开始」「特性」「工作原理」三处同步 `--link-memory` 用法与原理说明。
+
+## [1.1.2] — 2026-10-14
+
+多 agent 实机部署（本机 15 个技能目录）时暴露的安装器/核对工具问题。
+
+- **安装器改为自动发现技能目录**：除已知约定目录外，扫描 `~/＊/skills`、`~/.*/skills`、
+  `~/.config/＊/skills`（macOS 另含 `~/Library/Application Support/＊/skills`，Windows 另含
+  `%APPDATA%\＊\skills`），带 `.Trash/.cache/.npm/.local/.git/.vscode` 排除名单。
+  修掉 v1.1.1 只认 8 个硬编码目录的问题：实测补齐 WorkBuddy / Copilot / Qoder CN / Trae CN /
+  WorkBuddy AI / ZCode / mimocode / clawd。**注意 `$HOME/*/skills` 不含点开头目录**——
+  这正是 Copilot 一开始被漏掉的原因。
+- **未验证目录不再凭空创建**：`~/.dsh/skills` 改为「目录已存在才装」。作者本机实测
+  `@deepseek-ai/dsh` 的代码里没有任何 skills 目录约定，故 v1.1.1 README 把 `~/.dsh/skills`
+  列为 Harness 支持目录不成立，已如实修正。
+- **软链保护（重要）**：目标技能若是符号链接（常见于把技能链到私有 vault 里的真协议），
+  安装器**永不写入**——旧逻辑在 `--update` 下会把线上协议覆盖成仓库模板。
+- **同源变体检查**：目标目录已存在 `shared-agent-memory*` 其它变体时默认跳过并告警
+  （两个变体会让同一个 agent 重复加载记忆协议），`--force` 可强制安装。
+- **脏目标自愈**：目标目录存在但缺 `SKILL.md`（空壳残留）时改为"补装"而不是跳过。
+- **`scripts/compat-check.sh`（新增）**：逐目录核对 agent 是否真能读出技能——首行 `---`、
+  frontmatter 闭合、`name` 与目录同名、`description` ≤1024 字符、`version`、BOM/CRLF、UTF-8 合法性、
+  `memory/persona.md` 就位与 MemoryRoot 解析结果、同目录同源变体；软链安装单独标注且不判失败。
+- 修掉 `compat-check.sh` 的 UTF-8 误报：macOS 自带 `iconv` 在同编码转换时报
+  `Inappropriate ioctl for device`，改为 python3 校验 + `file(1)` 兜底。
+- 安装器结尾只列出**本次实际写入**的路径（旧版会把跳过的目标也算进去，误导）。
+- `SKILL.md` v1.1.2：体检脚本归属表述改为「脚本在公开仓库 `scripts/`，可对任意记忆库路径运行」
+  （旧表述让人以为脚本会随技能装进 agent 技能目录）。协议语义未变。
+
+## [1.1.1] — 2026-10-14
+
+并发冲突实测后补的两个协议加固（1.1.0 之后发现的两类残留冲突）。
+
+实测结论（临时 git 仓库模拟）：
+
+| 场景 | 结果 |
+|---|---|
+| 两 agent 各写自己的 inbox | ✅ 无冲突 |
+| **同一 agent 代号 + 两台机器写同名候选** | ❌ 冲突（`inbox/workbuddy/pref-same.md`） |
+| 同上，slug 改带主机后缀 | ✅ 无冲突 |
+| **两台设备并行晋升（都改 persona.md）** | ❌ 冲突（`memory/persona.md`） |
+| 并发 push 未先 pull | ⚠️ 被拒（非快进，非数据损坏） |
+
+修复：
+
+- **inbox 代号必须带主机后缀**：`inbox/<agent-slug>-<host>/`（如 `workbuddy-mac-m3`），
+  候选文件名再加 `<YYYY-MM-DD>-` 日期前缀作为第二道保险；`inbox/README.md` 与 README 同步。
+- **晋升单写者规则**：`atoms/`、`persona.md` 是共享单文件，同一时刻只允许一方晋升；
+  固定顺序 `git pull --rebase` → 晋升 → commit → push；push 被拒先 rebase 重试、**不强推**；
+  多设备都想晋升时，后到一方本轮只推自己的 inbox 候选，下轮再晋升。
+  已验证该顺序在两设备场景下**全程无冲突**并正确收敛（双方偏好都进 persona）。
+- `doctor.sh`：inbox 子目录名不含 `-` 时提示改为 `<agent>-<host>`。
+
+## [1.1.0] — 2026-10-13
+
+针对代码审查发现的问题做针对性修复（P0×3 / P1×4 / P2×4）。**协议与文件格式有新增字段，向后兼容**。
+
+### 修复（P0 · 影响核心目标）
+
+- **MemoryRoot 解析规则明确化**：新增「环境变量 `SHARED_AGENT_MEMORY_ROOT` > 本 SKILL.md 所在
+  目录下的 `./memory`」的权威顺序，并显式声明**不是 CWD**；禁止硬编码机器绝对路径
+  （旧版按 `./memory` 解析会随 agent 工作目录读错库，且与隐私自检互相打架）。
+- **多 agent 并发写隔离**：新增 `memory/inbox/<agent-slug>/` 候选池。每个 agent 只写自己的
+  子目录、只改自己创建的文件、落盘用「临时文件 → mv」；晋升集中在归并时执行。
+  同文件互改导致的静默覆盖从此不可能发生。
+- **跨设备同步纪律**：`SKILL.md` 新增「先 pull 后读、收工 push、冲突双发进
+  `inbox/<agent>/conflicts/` 交用户裁决、只 push 自己写的文件、库必须私有」五条；
+  chat-log 指针禁止机器绝对路径。
+
+### 修复（P1）
+
+- **示例不再污染真实上下文**：两个虚构示例从 `atoms/` 根移入 `atoms/_examples/`，
+  `priority` 由 7/8 降至 1；协议声明 `_` 前缀文件、`_examples/`、`inbox/` 一律不注入。
+- **隐私黑名单外置**：真实身份字符串从 `pre-push-check.sh` 移除，改读 gitignore 的
+  `scripts/blacklist.local`（模板 `blacklist.local.example`）；脚本改为「正则字面量」写法，
+  不再匹配自身，也不再依赖对不存在路径的硬编码排除。
+- **扫描能力补强**：新增 Windows 家目录（`C:\Users\<名>`）与 `/home/<名>` 检测（只命中真实用户名，
+  不误伤文档占位写法）；密钥格式补 `ghp_` / `github_pat_` / `xox[baprs]-` / `AIza`；
+  新增手机号与 18 位身份证检测；新增疑似密钥文件名的跟踪检查。
+- **安装器多目标化**：默认装到**所有**探测到的 agent（旧版只装第一个）；探测列表与 README
+  对齐（补 opencode、agents）；`--only` / `--target` / `--update` / `--yes` 新参数；
+  `--target` 缺参数与未知参数返回非零；未探测到已知 agent 时**拒绝静默装入 `~/skills`**
+  （需显式 `--yes`）；安装结束打印 MemoryRoot 实际解析结果，多 agent 未共享同一份库时给出警告。
+- **补齐 privacy CI**：新增 `.github/workflows/privacy-check.yml`（旧版在脚本里引用了这个
+  从未提交的路径）。CI 跑隐私自检 + 记忆库体检 + 安装器冒烟 + shellcheck + install.ps1 语法检查；
+  可用 `PRIVACY_BLACKLIST` secret 注入身份黑名单。
+
+### 新增（P2）
+
+- **`scripts/doctor.sh`**：把协议硬要求变成可校验检查——persona ≤3 KB、atoms ≤50 条 / ≤100 KB、
+  frontmatter 闭合与必填字段、`type`/`status` 枚举、`priority`/`confidence` 取值、双轴失衡、
+  `verified` 缺失或超 180 天未复核、chat-log 绝对路径、首句重复、inbox 积压；`--strict` 供 CI 使用。
+- **schema 增强**：新增 `source`（`<agent-slug>@<host>` 溯源）与 `verified`（新鲜度）字段；
+  `status` 枚举由模糊的「candidate→…→active」明确为
+  `candidate | active | user-accepted | superseded | archived`。
+- **`.gitignore` 修正**：旧版 `memory/persona.private.*`、`memory/atoms/_private*.md` 因含斜杠
+  却未加 `**/` 前缀，**对嵌套的实际路径从未生效**（保护是空的）；现已改为可匹配任意层级的写法，
+  并补充 `*.pem` / `*.p12` / `id_rsa*` / `credentials.json` / `**/.backups/` 等。
+- **`inbox/` 默认不入库**：只在公开模板里保留 `memory/inbox/README.md`，其余候选内容被 gitignore。
+
+### 其它
+
+- `LICENSE` 版权名与仓库名统一为 `shared-agent-memory contributors`。
+- README 增补「体检与保密门禁」章节、同步纪律、MemoryRoot 解析说明与升级方式。
+
+## [1.0.0] — 2026-10-13
+
+- 首个版本：单一 `SKILL.md` 协议 + Markdown 记忆库（L0-L3 分层）、双轴门控
+  （`priority` × `confidence`/`status`）、写入节制四问、跨平台安装脚本、pre-push 隐私自检。

@@ -1,46 +1,83 @@
 ---
 name: shared-agent-memory
-description: 通用的跨会话 Agent 记忆库读写协议（Skill，兼容任何读取 SKILL.md 的 agent，如 Codex / Claude Code / Hermes / OpenClaw / OpenCode / Cursor / Harness）。任何时候开始一个任务、或发现用户表现出稳定的偏好/事实/处理方式、或用户提及"记住这个""以后都这样""我的习惯是""参考我的偏好"、或想跨会话延续之前的经验时，都应该让 agent 读取并遵循这份共享记忆库，使同一份记忆在不同会话、不同 agent 间共享，避免让用户重复自己。即便用户没有显式要求，处理任务前也应先检查库中与任务相关的原子记忆与 persona；对话中产生值得沉淀的新信息后，按本协议写入。
+version: 1.1.3
+description: 通用的跨会话、跨 agent、跨设备 Agent 记忆库读写协议（Skill，兼容任何读取 SKILL.md 的 agent，如 Codex / Claude Code / Hermes / OpenClaw / OpenCode / Cursor / Harness）。任何时候开始一个任务、或发现用户表现出稳定的偏好/事实/处理方式、或用户提及"记住这个""以后都这样""我的习惯是""参考我的偏好"、或想跨会话延续之前的经验时，都应该让 agent 读取并遵循这份共享记忆库，使同一份记忆在不同会话、不同 agent、不同设备间共享，避免让用户重复自己。即便用户没有显式要求，处理任务前也应先检查库中与任务相关的原子记忆与 persona；对话中产生值得沉淀的新信息后，按本协议写入。
 ---
 
-# Shared Agent Memory · 读写协议（通用版）
+# Shared Agent Memory · 读写协议（通用版 v1.1）
 
 借鉴分层记忆（L0 原始对话 → L1 原子记忆 → L2 场景 → L3 persona → 跨会话注入复用）的思路，
 用**通用 Skill（SKILL.md）格式**落地，兼容所有读取 `SKILL.md` 的 agent。
 可整体拷到任意支持 agent skill 的目录使用，**不依赖任何特定 Harness**。
 
-## 记忆库根目录（相对路径，任何位置可工作）
+> v1.1.3：补「多 agent 共享的最稳做法是把各 agent 的 `memory/` 软链到同一份真库」，并显式点明
+> 「什么都不配置 = 各 agent 各读各自的模板库」这一最常见的假共享陷阱；
+> v1.1.2：体检脚本归属表述更准确（脚本在公开仓库 scripts/，可对任意记忆库路径运行）；
+> v1.1.1：并发写纪律补充「inbox 代号必须带主机后缀」与「晋升单写者」；v1.1 新增：MemoryRoot 权威解析规则、多 agent 并发写纪律（inbox 候选池）、跨设备同步纪律、
+> 记忆溯源与新鲜度字段（`source` / `verified`）、`scripts/doctor.sh` 体检。
+
+## 记忆库根目录（唯一权威解析规则，必须严格按序）
 
 ```
-MemoryRoot = ./memory
+MemoryRoot 解析顺序：
+1. 环境变量 SHARED_AGENT_MEMORY_ROOT 已设置 → 用它（绝对路径）
+2. 否则 → 本 SKILL.md 文件所在目录下的 ./memory
 ```
 
-- `persona.md`        —— L3 用户画像（最重要的长期偏好、做事风格、处理方式）
-- `atoms/*.md`        —— L1 原子记忆（一条一个文件）
-- `scenes/*.md`       —— L2 场景块（一段相关上下文的归纳）
-- `chat-log/*.md`     —— L0 关键聊天记录**摘要 / 会话日志指针**（见"原始聊天不进库"）
+⚠️ **不是当前工作目录（CWD）**。agent 通常在用户的项目目录里执行任务，按 CWD 解析
+会读到无关目录，或凭空造出一套影子记忆库，导致"共享"静默失效。
 
-> 若想与自身 Obsidian / 特定 agent 联动，把 `./memory` 改成目标目录的绝对路径或软链即可。
+**禁止**把 MemoryRoot 硬编码成机器绝对路径（`/Users/...`、`C:\Users\...`）：
+既不可移植，也会被 `scripts/pre-push-check.sh` 判为隐私泄漏。
+
+**多设备 / 多 agent 指向同一份库**，两种做法：
+
+1. **软链（本机多 agent 首选，最稳）**：把各 agent 技能目录下的 `memory/` 做成软链，统一指向
+   同一份真库（安装器一条命令即可：`bash install.sh --update --link-memory "<真库路径>"`）。
+   此时"本 SKILL.md 同目录下的 `./memory`"恰好落到同一处——**不依赖环境变量，也不依赖 agent 的
+   启动方式**（GUI 启动的 app 常常读不到 shell 环境变量，只靠方式 2 会静默失效）。
+2. **环境变量（跨设备首选）**：导出 `SHARED_AGENT_MEMORY_ROOT=~/AgentMemory`（绝对路径），
+   此时装在多个 agent 技能目录里的副本都读写同一份数据。
+
+⚠️ **两种都不做 = 各 agent 各读各自目录下的 `memory/`，互不可见。** 新装的目标默认带入的是
+**模板库**（persona 只有占位话术、atoms 只有 `_template.md`），于是出现最危险的假共享：
+每个 agent 都能"正常读到 persona"，但读到的是空模板，真实记忆一条也没共享到。
+**判断方法**：看该目录下 `memory/persona.md` 是不是模板内容、或有没有 2 个以上真实 atoms；
+**修复方法**：用上面方式 1 或 2 指向真库。
+
+```
+memory/
+├── persona.md          —— L3 用户画像（最重要的长期偏好、做事风格）
+├── atoms/*.md          —— L1 原子记忆（一条一个文件）
+├── scenes/*.md         —— L2 场景块（一段相关上下文的归纳）
+├── inbox/<agent-slug>/ —— 待晋升的候选记忆（每个 agent 只写自己的子目录）
+└── chat-log/*.md       —— L0 摘要 / 会话日志指针（见"原始聊天不进库"）
+```
 
 ## ⚠️ 省 Token 铁律（不可违反）
 
 记忆库**按"浓缩"设计，不是聊天记录仓库**。违反以下任何一条会令库膨胀并浪费 token：
 
 1. **原始聊天记录绝不写进记忆库**。原始日志留在各自的 agent 会话存档。
-   `chat-log/` 只允许放**一句话摘要 + 会话日志路径指针**，而不是把对话搬进来。
+   `chat-log/` 只允许放**一句话摘要 + 会话日志指针**，而不是把对话搬进来。
+   **指针必须是相对路径或"日期+主题"描述**，禁止机器绝对路径。
 2. **每次会话只允许读取**：`persona.md`（完整但精简）+ 命中的高优先原子记忆。
-   **绝不自动通读** `atoms/`、`scenes/` 的全部文件或任何 `chat-log/` 原文。
+   **绝不自动通读** `atoms/`、`scenes/`、`inbox/` 的全部文件或任何 `chat-log/` 原文。
 3. **persona.md 设硬阈值 ≤ 3 KB**（约 ≤ 1000 token）。接近/超限时先压缩、去重
    （细节下沉为原子记忆），再进入会话。若超过 3 KB，禁止整篇注入，改由 grep 后只读命中片段。
 4. **原子记忆按 priority 门控注入**：只注入 `priority >= 6` 且与当前任务相关的；`< 6` 的
    只列标题/tags 进检索清单，需要时再单独读那一条。绝不批量导入。
+5. **非记忆区不可注入**：`_template.md`、任何 `_` 前缀文件、`_examples/` 与整个 `inbox/`
+   都是**模板 / 示例 / 候选区**，不是记忆，禁止纳入上下文注入。
 
 ## 开始任务前（必做，且克制）
 
-1. 读取 `memory/persona.md`（遵守 3 KB 阈值）。
-2. `ls memory/atoms/` 快速扫 `type` + `priority` + 文件名；只把命中当前任务且 `priority>=6`
+1. 按上文规则解析 MemoryRoot；若解析结果不可读（无 `persona.md`），先停下告知用户，
+   **不要自行在 CWD 下新建记忆库**。
+2. 读取 `memory/persona.md`（遵守 3 KB 阈值）。
+3. `ls memory/atoms/` 快速扫 `type` + `priority` + 文件名；只把命中当前任务且 `priority>=6`
    的原子纳入上下文，其余不读。
-3. 若任务延续自既往经验，grep `memory/scenes/` 的 `summary:`，命中才读对应场景全文。
+4. 若任务延续自既往经验，grep `memory/scenes/` 的 `summary:`，命中才读对应场景全文。
 
 ### 写入节制（不打扰，只在真该问时问）
 
@@ -53,6 +90,20 @@ MemoryRoot = ./memory
 
 其余情况**宁可不打扰，也不靠猜**。
 
+### 多 agent / 多设备并发写纪律（铁律）
+
+记忆库会被多个 agent、多台设备同时访问，**冲突必须在构造上就不可能发生**：
+
+1. **只写自己的收件箱**：新沉淀的记忆先写 `memory/inbox/<agent-slug>-<host>/<YYYY-MM-DD>-<主题>.md`，
+   例如 `inbox/workbuddy-mac-m3/2026-10-14-prefers-bullet.md`、`inbox/codex-win-pc/...`。
+   **代号必须带主机后缀**：同一个 agent 装在两台机器上若共用 `inbox/workbuddy/`，两边写同名候选
+   仍会撞车（实测确认）。文件名带日期前缀作为第二道保险。**绝不修改其它 agent 已写的文件**。
+2. **只改自己的文件**：只有"本 agent 创建的文件"才可原地更新；要改别人的记忆 → 先读，
+   保留双方版本，把合并建议写进自己的 inbox。
+3. **原子落盘**：写文件先写临时文件再改名覆盖（`tmp → mv`），避免其它 agent 读到半截文件。
+4. **晋升集中在归并时做**（见下文）：晋升动作在 `pull --rebase` 之后、push 之前执行，
+   且**同一时刻只允许一方晋升**（单写者），避免两方并行改 `atoms/` / `persona.md`。
+
 ## 对话中值得沉淀的信息（产生后写入，且保持浓缩）
 
 当用户表达出以下任一类**稳定**信息时，按 schema 写入（避免琐碎的一次性内容）：
@@ -62,8 +113,9 @@ MemoryRoot = ./memory
 - 一贯处理方式 / 决策原则（"这类问题我通常 X"）
 - 反复提到的约束或要求
 
-**沉降规则**：新信息先进 `atoms/`（原子），不要直接堆进 persona。只有当一个偏好被重复
-确认、跨多个会话稳定时，才归纳进 `persona.md` 并压缩表达。
+**沉降规则**：新信息先进 `inbox/<agent-slug>/`（候选），不要直接堆进 persona。
+候选被用户确认、或被 2+ 次独立会话验证后，才晋升进 `atoms/`；跨多个会话稳定后再归纳进
+`persona.md` 并压缩表达。
 
 ## 写入 schema
 
@@ -72,9 +124,13 @@ MemoryRoot = ./memory
 ```markdown
 ---
 type: preference | fact | handling | constraint
-priority: 1-10        # 主字段：注入优先级；>=6 主动注入，<=4 仅供按需检索
-confidence: (可选 0-1) # 内容可信度，与 priority 正交；高>=0.85 / 中0.6-0.84 / 低<0.6
-status: (可选)        # 状态链 candidate→…→active；非 user-accepted 不作已定结论
+priority: 1-10            # 主字段：注入优先级；>=6 主动注入，<=4 仅供按需检索
+confidence: (可选 0-1)     # 内容可信度，与 priority 正交；高>=0.85 / 中0.6-0.84 / 低<0.6
+status: (可选)             # 仅取以下枚举值之一：
+                          #   candidate(候选待确认) | active(已生效) | user-accepted(用户明确认可)
+                          #   | superseded(已被取代) | archived(归档保留)
+source: (可选)             # 溯源：<agent-slug>@<host>，如 workbuddy@mac-m3
+verified: (可选 YYYY-MM-DD) # 最近一次被确认仍然成立的日期（新鲜度）
 tags: [可选, 标签]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -83,7 +139,10 @@ updated: YYYY-MM-DD
 <可选：一两行补充/由来/示例>
 ```
 
-同义记忆先查重（grep 已有 atoms），合并更新 `updated` 与 `priority`，不重复建文件。
+- 非 `user-accepted` / `active` 的记忆**不得当作已定结论**使用。
+- `priority >= 6` 的条目应有 `verified`；超过 180 天未复核会被 `doctor.sh` 列为待复核。
+- 同义记忆先查重（grep 已有 atoms **与自己的 inbox**），合并更新 `updated` 与 `priority`，
+  不重复建文件。
 
 ### L2 场景 —— `memory/scenes/<kebab-name>.md`
 
@@ -95,21 +154,45 @@ updated: YYYY-MM-DD
 把高优先、稳定、跨领域的偏好与处理方式汇总进去，保持精简（每次会话都会读到的核心）。
 从 atoms 归纳而来，去重，删除已被覆盖/过期的倾向。
 
+## 🔁 跨设备同步纪律（谁 pull、谁 push、冲突怎么办）
+
+记忆库是普通 Markdown 目录（可放私有 git 仓库 / Obsidian vault），但**同步必须按纪律执行**，
+否则多设备会互相覆盖：
+
+1. **会话开始先 pull**：开始任务、读取记忆之前先同步一次（`git pull --rebase` 或你的同步工具），
+   确保读到最新版本。
+2. **会话结束再 push**：本次会话产生的写入（inbox 候选 / 晋升结果）在结束前提交并推送。
+3. **冲突绝不自动合并 Markdown 正文**：出现 `<<<<<<<` 冲突标记时，**把双方原文挪进
+   `inbox/<agent-slug>/conflicts/` 保留，交由用户裁决**；禁止自行挑选一方，也禁止把冲突标记
+   留在 `atoms/`、`persona.md` 里被读进上下文。
+4. **只 push 自己写的文件**：不同 agent 写不同文件（inbox 隔离），正常路径下 git 按文件合并
+   天然无冲突；若真发生同文件冲突，按第 3 条处理。
+5. **库必须私有**：含个人信息的记忆库只放**私有**仓库 / 本地 vault，禁止推送公开仓库。
+6. **晋升是单写者操作**：`atoms/`、`persona.md` 是共享单文件，同一时刻只允许**一方**执行晋升，
+   且顺序固定为 **`git pull --rebase` → 晋升 → commit → push**。若 push 被拒（非快进）：
+   先 `pull --rebase` 再重试，**不要**强推；`persona.md` 已出现冲突 → 按第 3 条落
+   `inbox/<slug>/conflicts/`。多台设备都想晋升时，后到的一方本轮只 push 自己的 inbox 候选，
+   等下一轮归并——**不要并行改 persona.md**（实测：并行晋升必然在 persona.md 撞车）。
+
 ## 维护纪律
 
 - **只沉淀稳定信息**，一次性/临时请求不写入。
-- **逐层归纳**：原子记忆多了就往 persona / 场景收敛，保持 atoms 精简。
+- **逐层归纳**：候选（inbox）→ 原子（atoms）→ 场景（scenes）/ 画像（persona），保持各级精简。
 - **容量收敛是硬要求**：`persona.md` ≤ 3 KB；`atoms/` 总量 > 50 条或 > 100 KB 时应合并、
   降级过期项、删除次要细节。目标：每次会话自动注入内容恒在 ~1–1.5 KB 内。
+- **归并前先体检**：体检脚本在公开仓库的 `scripts/doctor.sh`，可对任意记忆库路径运行
+  （`bash scripts/doctor.sh <记忆库路径>`）；按报告处理超限与待复核项。
 - **不破坏 schema**，改元数据（priority/updated）不清除正文。
 - 涉及用户隐私或敏感信息尽量匿名/概括。
 - 写库前自检：这一条是否值得让所有未来 agent 看到？拿不准就不写。
-- **priority 与 confidence 分工**：priority 决定"是否/优先注入"，confidence + status 决定"注入后能否直接当事实或行动依据"。两者正交、不互相替代；有可选字段时如实填写，证据不足不虚标高可信。
+- **priority 与 confidence 分工**：priority 决定"是否/优先注入"，confidence + status 决定
+  "注入后能否直接当事实或行动依据"。两者正交、不互相替代；证据不足不虚标高可信。
 
 ## 🔁 归并 / 总结压缩协议（谁做、何时做、怎么做）
 
 **由"正在运行的 agent"自动做**——不做专门服务、不另起 cron。agent 遵守本协议读写时，
-在触达任一条件就执行一次"下沉归并"：
+在触达任一条件就执行一次"下沉归并"。**归并前先 `git pull --rebase` 并确认工作区干净**，
+归并属于「单写者」操作（见同步纪律第 6 条）。
 
 ### 触发时机（满足任一即做）
 1. persona.md 超限（近 / 超 3 KB）→ 立即压缩、去重，细节下沉为原子记忆。
@@ -118,12 +201,21 @@ updated: YYYY-MM-DD
 4. 会话边界：本次会话为库新增 ≥ 3 条原子记忆时，顺手做一次局部收敛。
 5. pri/conf 失衡：某原子的 priority 与 confidence/status 明显不匹配（如高 priority 却低可信，
    或低 priority 却标 user-accepted），或与 persona/用户偏好冲突 → 检查并提示校准。
+6. `inbox/` 积压：某 agent 的 inbox 超过 10 条候选 → 提示用户或就地做一次晋升评估。
 
-### 压缩方法（L3 → L2 → 原子）
+### 压缩方法（inbox → L1 → L2 → L3）
+- **晋升**：inbox 候选被用户确认、或 2+ 次独立会话验证 → 写入 `atoms/`（带 `source` / `verified`），
+  并从 inbox 删除该候选。
 - **去重合并**：grep 全库找同义/重叠条目 → 合并为一条，priority 取高，updated 更新。
 - **升级**：被 2+ 次独立会话验证的稳定偏好 → 归纳进 persona，删对应原子（或降为 priority<=4）。
 - **降级/删除**：priority<=2 且长期未命中 → 删除；次要背景下沉为 tags 检索项。
 - **总结**：多个原子围绕同一主题 → 收敛成 scene 块（summary + 关键点 + 引用）。
+
+## 忘记 / 删除协议（隐私请求）
+
+用户要求"忘掉 X"时：① grep 全库定位（atoms / scenes / persona / inbox / chat-log）；
+② 删除或匿名化后必须在答复中**列出改了哪些文件**；③ 若记忆库是 git 仓库，提醒用户
+"历史提交里可能仍留有原文"（需改写历史或轮换仓库才彻底）。禁止静默删除。
 
 ## 何时不需要用本协议
 
